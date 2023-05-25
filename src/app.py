@@ -2,6 +2,14 @@ from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
 from sqlalchemy import UniqueConstraint
+import requests
+import json
+from flask_swagger import swagger
+from flasgger import Swagger
+from flasgger import swag_from
+from flasgger import Swagger, swag_from
+
+
 
 
 app = Flask(__name__)
@@ -10,6 +18,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
+swagger = Swagger(app)
 
 class Task(db.Model):
     id = db.Column(db.Integer, primary_key = True)
@@ -18,6 +27,7 @@ class Task(db.Model):
     categoria = db.Column(db.String(30))
     precio = db.Column(db.Float)
     stock = db.Column(db.Integer)
+    
 
 
 class Pedidos(db.Model):
@@ -36,6 +46,7 @@ class DetallePedido(db.Model):
     __table_args__ = (
         UniqueConstraint('id_pedido', 'id_task', name='_id_pedido_id_task_uc'),
     )
+
     
 
     def __init__(self, nombre, descripcion, categoria, precio, stock):
@@ -53,7 +64,8 @@ class DetallePedido(db.Model):
         super().__init__()
         self.id_pedido = id_pedido
         self.id_task = id_task
-        self.cantidad = cantidad
+        self.cantidad = cantidad    
+
 
 
 class TaskSchema(ma.Schema):
@@ -63,23 +75,22 @@ class TaskSchema(ma.Schema):
 task_schema = TaskSchema()
 tasks_schema = TaskSchema(many=True)
 
-@app.route('/tasks', methods = ['POST'])
+@app.route('/tasks', methods=['POST'])
 def create_task():
-
     nombre = request.json['nombre']
     descripcion = request.json['descripcion']
     categoria = request.json['categoria']
     precio = request.json['precio']
     stock = request.json['stock']
 
-    new_task = Task(nombre, descripcion, categoria, precio, stock)
+    new_task = Task(nombre=nombre, descripcion=descripcion, categoria=categoria, precio=precio, stock=stock)
     db.session.add(new_task)
     db.session.commit()
 
     return task_schema.jsonify(new_task)
 
-
 @app.route('/tasks', methods=['GET'])
+@swag_from('swagger_config.yml') 
 def get_tasks():
   all_tasks = Task.query.all()
   result = tasks_schema.dump(all_tasks)
@@ -173,6 +184,56 @@ def create_detalle_pedido():
 
     return jsonify({'message': 'DetallePedido created successfully'})
 
+    ##funciones que hay que hacer 
+@app.route('/transbank/transaction', methods=['POST'])
+def transbank_transaction():
+    url = 'https://webpay3gint.transbank.cl'  # Reemplaza con la URL real de la API de Transbank
+
+    # Obtener los datos de la solicitud
+    monto = request.json['monto']
+    descripcion = request.json['descripcion']
+
+    # Construir el payload de la solicitud
+    payload = {
+        'monto': monto,
+        'descripcion': descripcion
+    }
+
+    # Realizar la solicitud a la API de Transbank
+    response = requests.post(url, json=payload)
+
+    # Verificar si la solicitud fue exitosa
+    if response.status_code == 200:
+        # La transacción se realizó correctamente
+        transaccion = response.json()
+        return jsonify(transaccion)
+    else:
+        # Ocurrió un error al realizar la transacción
+        return jsonify({'error': 'Error al realizar la transacción'}), 500
+
+##transaccion que hay que hace 
+@app.route('/transbank/transaction/<id_transaccion>', methods=['GET'])
+def transbank_transaction_status(id_transaccion):
+    url = f'https://webpay3gint.transbank.cl/{id_transaccion}'  # Reemplaza con la URL real de la API de Transbank
+
+    # Realizar la solicitud a la API de Transbank
+    response = requests.get(url)
+
+    # Verificar si la solicitud fue exitosa
+    if response.status_code == 200:
+        # Obtener el estado de la transacción
+        estado = response.json()
+        return jsonify(estado)
+    else:
+        # Ocurrió un error al obtener el estado de la transacción
+        return jsonify({'error': 'Error al obtener el estado de la transacción'}), 500
+
+@app.route('/swagger')
+def swagger_spec():
+    swag = swagger(app)
+    swag['info']['version'] = "1.0"
+    swag['info']['title'] = "API Documentation"
+    return jsonify(swag)
 
 
 
